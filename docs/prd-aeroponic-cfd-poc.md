@@ -210,7 +210,7 @@ The PoC UI shall provide, either through a desktop UI or a CLI initially, the ab
 - compare parameter configurations;
 - identify assumptions and data provenance.
 
-A future Tauri desktop UI may provide 3D visualization, parameter panels, CFD result overlays, and optimization controls.
+A desktop UI (Bevy Engine + Iced RS) provides 3D visualization, parameter panels, CFD result overlays, and optimization controls.
 
 ### 3.1.2 Hardware Interfaces
 
