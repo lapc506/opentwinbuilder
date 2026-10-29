@@ -8,6 +8,5 @@ pub mod mcp;
 pub mod model_source;
 pub mod viewport;
 
-pub use mcp::McpServer;
 pub use model_source::ModelSource;
 pub use viewport::Viewport;

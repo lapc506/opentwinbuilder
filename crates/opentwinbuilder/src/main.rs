@@ -81,10 +81,10 @@ mod iced_shell {
 use bevy::prelude::*;
 
 use application::studio::Studio;
-use infrastructure::mcp_server::{ViteMcpServer, PROTOCOL_VERSION};
+use infrastructure::mcp_server::{StudioMcpServer, PROTOCOL_VERSION};
 use infrastructure::thingport::ThingportClient;
 use infrastructure::viewport_bevy::StudioViewportPlugin;
-use ports::mcp::McpServer;
+use ports::mcp::INBOUND_TOOLS;
 use ports::viewport::SelectionHandle;
 
 fn main() {
@@ -99,15 +99,16 @@ fn main() {
     let studio = Studio::new(selection.clone());
     let _ = studio;
 
-    // Stateless vitemcp MCP server boots next to the app (no session state).
+    // Stateless MCP server (rmcp) boots next to the app — inbound tool surface.
     // Thingport on-demand model source: THINGPORT_URL / THINGPORT_TOKEN env.
     let thingport = ThingportClient::new(
         std::env::var("THINGPORT_URL").unwrap_or_default(),
         std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
     );
-    let mcp = ViteMcpServer::new().with_thingport(thingport);
-    let _ = mcp.list_tools();
-    println!("OpenTwinBuilder MCP protocol: {}", PROTOCOL_VERSION);
+    let mcp = StudioMcpServer::new().with_thingport(thingport);
+    // The A2A orchestrator (outbound) is a separate layer; here we only verify
+    // the inbound provider is constructed.
+    println!("OpenTwinBuilder MCP protocol: {} (inbound tools: {})", PROTOCOL_VERSION, INBOUND_TOOLS.len());
 
     // Bevy app: 3D viewport adapter → shared selection.
     App::new()
