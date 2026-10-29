@@ -5,6 +5,10 @@ edition = "2021"
 description = "OpenTwinBuilder — Rust desktop Studio (Bevy 3D + Iced RS UI) for digital twins"
 license = "BSL-1.1"
 
+[features]
+default = []
+iced-shell = []   # habilita el shell iced (Ribbon) — opcional
+
 [dependencies]
 ## 3D rendering + real-time visualization, incl. Entity Picking (`bevy_picking`).
 ## `default-features = false` keeps audio/wayland out of the build; the X11

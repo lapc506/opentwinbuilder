@@ -7,3 +7,6 @@
 pub mod mcp_server;
 pub mod thingport;
 pub mod viewport_bevy;
+
+#[cfg(feature = "iced-shell")]
+pub mod ribbon;
