@@ -44,6 +44,7 @@ The application provides:
 - **FMI Standard Integration**: FMI Standard (`github.com/modelica/fmi-standard`) for simulation interoperability
 - **OpenPLCCore Integration**: `autonomy-logic/openplc-editor` and `autonomy-logic/openplc-runtime` for PLC automation
 - **SimReady Assets**: NVIDIA SimReady Assets (`huggingface.co/datasets/nvidia/simready-assets`) for 3D content
+- **Thingport (self-hosted model library)**: gestiona la biblioteca de modelos 3D (incl. SimReady ~500GB) con fetch bajo demanda; se integra vía REST API/MCP y se expone como herramienta en el orquestador A2A
 - **OpenUSD Integration**: NVIDIA Omniverse/OpenUSD for advanced 3D scene management
 - **Multi-Tool Integration**: Blender SDK, Cinema 4D SDK, Maya SDK, ZBrush SDK, Substance 3D SDK, Unity SDK, Unreal Engine SDK
 - **Industry Integration**: OpenFactory (`github.com/openfactoryio/openfactory-core`), Factory IO drivers, OpenCADStudio (`github.com/HakanSeven12/OpenCADStudio`), Ingetrazo (`github.com/ingelibre/ingetrazo`), SolidCraft (`github.com/tangency-labs/solidcraft`), PCBCraft (`github.com/tangency-labs/pcbcraft`), FieldCraft (`github.com/tangency-labs/fieldcraft`), SMLib (`github.com/tangency-labs/smlib`)

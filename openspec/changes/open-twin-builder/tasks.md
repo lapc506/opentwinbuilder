@@ -72,6 +72,14 @@
 - [ ] T54: Implement logging and monitoring
 - [ ] T55: Implement performance profiling
 
+### Phase 5b: Thingport / SimReady On-Demand Assets (TP1-TP5)
+
+- [ ] TP1: Configurar conexión a instancia Thingport (URL + API token) en la configuración del Studio
+- [ ] TP2: Implementar adaptador REST Thingport (listar/buscar/colecciones) en `src/infrastructure/`
+- [ ] TP3: Implementar fetch bajo demanda de un modelo seleccionado y su import al viewport Bevy
+- [ ] TP4: Exponer tools MCP `thingport.search`, `thingport.fetch`, `thingport.import` en el `ViteMcpServer`
+- [ ] TP5: Registrar la capacidad Thingport como herramienta/agente en el orquestador A2A
+
 ### Phase 6: Quality & Testing (T56-T65)
 
 - [ ] T56: Implement unit tests (src/**/*.rs)

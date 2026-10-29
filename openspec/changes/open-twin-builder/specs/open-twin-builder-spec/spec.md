@@ -278,6 +278,31 @@ The toolkit SHALL provide **excellent developer experience**:
 - **WHEN** a developer wants to contribute
 - **THEN** the developer has access to contribution guidelines and tools
 
+### Requirement: Thingport Self-Hosted Model Library Integration
+
+The toolkit SHALL integrate **Thingport** (self-hosted 3D model library) as the asset
+source for the studio, so large asset libraries (e.g. NVIDIA SimReady, ~500 GB) are
+managed and fetched **on demand** instead of being installed wholesale.
+
+- **Thingport instance**: the toolkit SHALL connect to a self-hosted Thingport instance
+  (REST API + API token, or via its MCP surface) with the instance URL configured at startup.
+- **Search & browse**: the toolkit SHALL list, search, and browse models/collections from
+  Thingport without downloading them.
+- **On-demand fetch**: the toolkit SHALL fetch a single selected model (not the whole
+  library) from Thingport and load it into the Bevy viewport.
+- **Organize**: the toolkit SHALL reflect Thingport collections/tags so assets can be
+  selected by robotics/factory use case.
+- **A2A surface**: as an A2A orchestrator, the toolkit SHALL expose Thingport-backed model
+  acquisition as a tool/agent capability (search → fetch → import).
+
+#### Scenario: On-demand SimReady asset
+
+- **WHEN** a user selects a SimReady asset in the studio
+- **THEN** the toolkit queries Thingport for that model, fetches only that asset, and
+  imports it into the viewport without downloading the rest of the library.
+- **WHEN** the user searches a robotics/factory use case
+- **THEN** the toolkit returns the matching Thingport models and lets the user pick one.
+
 ## Success Criteria
 
 ### Technical Requirements
