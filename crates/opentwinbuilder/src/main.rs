@@ -87,7 +87,41 @@ use infrastructure::viewport_bevy::StudioViewportPlugin;
 use ports::mcp::INBOUND_TOOLS;
 use ports::viewport::SelectionHandle;
 
+/// Serve the Studio's inbound MCP server over stdio (rmcp). This is the
+/// provider surface an external client (e.g. better-toolkits ViteMCP harness)
+/// connects to. Stateless: every request is self-contained.
+fn run_mcp_server_stdio() -> anyhow::Result<()> {
+    use rmcp::transport::stdio;
+    use rmcp::ServiceExt;
+
+    let thingport = ThingportClient::new(
+        std::env::var("THINGPORT_URL").unwrap_or_default(),
+        std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
+    );
+    let server = StudioMcpServer::new().with_thingport(thingport);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let running = server.serve(stdio()).await?;
+        println!("OpenTwinBuilder MCP server ready (stdio, protocol {PROTOCOL_VERSION})");
+        running.waiting().await?;
+        Ok(())
+    })
+}
+
 fn main() {
+    // Headless MCP server mode: `opentwinbuilder --mcp-server` speaks MCP over
+    // stdio. Useful as the provider a client harness dogfoods (feature factory).
+    if std::env::args().any(|a| a == "--mcp-server") {
+        std::process::exit(match run_mcp_server_stdio() {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("mcp-server error: {e}");
+                1
+            }
+        });
+    }
+
     #[cfg(feature = "iced-shell")]
     {
         let _ = iced_shell::run();
@@ -105,7 +139,7 @@ fn main() {
         std::env::var("THINGPORT_URL").unwrap_or_default(),
         std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
     );
-    let mcp = StudioMcpServer::new().with_thingport(thingport);
+    let _mcp = StudioMcpServer::new().with_thingport(thingport);
     // The A2A orchestrator (outbound) is a separate layer; here we only verify
     // the inbound provider is constructed.
     println!("OpenTwinBuilder MCP protocol: {} (inbound tools: {})", PROTOCOL_VERSION, INBOUND_TOOLS.len());
