@@ -70,6 +70,10 @@ mod iced_shell {
     }
 
     pub fn run() -> iced::Result {
+        // Force Vulkan as the wgpu backend (primary). Metal (Apple) and other
+        // backends are deferred; WGPU_BACKEND=vulkan guarantees the NVIDIA/Intel
+        // path on this host.
+        std::env::set_var("WGPU_BACKEND", "vulkan");
         iced::run("OpenTwinBuilder — Ribbon (iced)", update, view)
     }
 }

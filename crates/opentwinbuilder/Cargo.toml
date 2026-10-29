@@ -36,8 +36,9 @@ bevy = { version = "0.20", default-features = false, features = [
     "default_font",
 ] }
 
-## Cross-platform UI framework (ribbon / panels).
-iced = "0.13"
+## Cross-platform UI framework (ribbon / panels). Backend wgpu — Vulkan primary
+## (forced in code via WGPU_BACKEND=vulkan); Metal (Apple) and other backends deferred.
+iced = { version = "0.13", default-features = false, features = ["wgpu", "system"] }
 
 ## Stateless vitemcp MCP server core.
 serde = { version = "1", features = ["derive"] }
