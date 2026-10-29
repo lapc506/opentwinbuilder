@@ -5,4 +5,5 @@
 //! about Bevy/Iced/transport.
 
 pub mod mcp_server;
+pub mod thingport;
 pub mod viewport_bevy;

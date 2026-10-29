@@ -41,3 +41,6 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 anyhow = "1"
+
+## Lightweight blocking HTTP client for the Thingport self-hosted model library.
+ureq = "2"

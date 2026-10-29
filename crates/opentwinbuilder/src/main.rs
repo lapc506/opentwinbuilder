@@ -17,6 +17,7 @@ use bevy::prelude::*;
 
 use application::studio::Studio;
 use infrastructure::mcp_server::{ViteMcpServer, PROTOCOL_VERSION};
+use infrastructure::thingport::ThingportClient;
 use infrastructure::viewport_bevy::StudioViewportPlugin;
 use ports::mcp::McpServer;
 use ports::viewport::SelectionHandle;
@@ -25,9 +26,15 @@ fn main() {
     // --- Composition root ---
     let selection = SelectionHandle::default();
     let studio = Studio::new(selection.clone());
+    let _ = studio;
 
     // Stateless vitemcp MCP server boots next to the app (no session state).
-    let mcp = ViteMcpServer::new();
+    // Thingport on-demand model source: THINGPORT_URL / THINGPORT_TOKEN env.
+    let thingport = ThingportClient::new(
+        std::env::var("THINGPORT_URL").unwrap_or_default(),
+        std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
+    );
+    let mcp = ViteMcpServer::new().with_thingport(thingport);
     let _ = mcp.list_tools();
     println!("OpenTwinBuilder MCP protocol: {}", PROTOCOL_VERSION);
 
