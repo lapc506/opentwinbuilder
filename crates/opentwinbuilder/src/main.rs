@@ -13,6 +13,67 @@ mod domain;
 mod infrastructure;
 mod ports;
 
+#[cfg(feature = "iced-shell")]
+mod iced_shell {
+    use iced::Element;
+
+    use crate::infrastructure::ribbon::{
+        ribbon_view, RibbonCommand, RibbonGroupSpec, RibbonMessage, RibbonState,
+    };
+
+    #[derive(Debug, Clone, Default)]
+    pub struct RibbonDemo {
+        ribbon: RibbonState,
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum Message {
+        Ribbon(RibbonMessage),
+    }
+
+    fn update(state: &mut RibbonDemo, message: Message) {
+        let Message::Ribbon(m) = message;
+        match m {
+            RibbonMessage::ToggleCollapse => state.ribbon.toggle_collapse(),
+            RibbonMessage::SelectTab(i) => state.ribbon.select_tab(i),
+            RibbonMessage::Command(_) => {}
+        }
+    }
+
+    fn view(state: &RibbonDemo) -> Element<Message> {
+        use std::sync::LazyLock;
+        static TABS: LazyLock<Vec<&'static str>> =
+            LazyLock::new(|| vec!["Home", "Editor", "Viewport", "Thingport", "Estado"]);
+        static GROUPS: LazyLock<Vec<RibbonGroupSpec>> = LazyLock::new(|| {
+            vec![
+                RibbonGroupSpec {
+                    title: "Selección",
+                    commands: vec![
+                        RibbonCommand { label: "Todo", tip: "" },
+                        RibbonCommand { label: "Limpiar", tip: "" },
+                    ],
+                },
+                RibbonGroupSpec {
+                    title: "Thingport",
+                    commands: vec![
+                        RibbonCommand { label: "Buscar", tip: "" },
+                        RibbonCommand { label: "Importar", tip: "" },
+                    ],
+                },
+                RibbonGroupSpec {
+                    title: "Archivo",
+                    commands: vec![RibbonCommand { label: "Guardar", tip: "" }],
+                },
+            ]
+        });
+        ribbon_view(&TABS, &state.ribbon, &GROUPS).map(Message::Ribbon)
+    }
+
+    pub fn run() -> iced::Result {
+        iced::run("OpenTwinBuilder — Ribbon (iced)", update, view)
+    }
+}
+
 use bevy::prelude::*;
 
 use application::studio::Studio;
@@ -23,6 +84,12 @@ use ports::mcp::McpServer;
 use ports::viewport::SelectionHandle;
 
 fn main() {
+    #[cfg(feature = "iced-shell")]
+    {
+        let _ = iced_shell::run();
+        std::process::exit(0);
+    }
+
     // --- Composition root ---
     let selection = SelectionHandle::default();
     let studio = Studio::new(selection.clone());
