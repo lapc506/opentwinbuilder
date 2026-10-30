@@ -187,7 +187,7 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Commit on a branch (Git-style)")]
+    #[tool(name = "model.commit", description = "Commit on a branch (Git-style)")]
     fn model_commit(&self, Parameters(args): Parameters<CommitParams>) -> Result<CallToolResult, McpError> {
         let mut store = self.versions.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let branch = BranchId(args.branch.clone());
@@ -200,14 +200,14 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Create a branch from a version")]
+    #[tool(name = "model.branch", description = "Create a branch from a version")]
     fn model_branch(&self, Parameters(args): Parameters<BranchParams>) -> Result<CallToolResult, McpError> {
         let mut store = self.versions.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let id = store.create_branch(args.name.clone(), args.from.map(crate::domain::versioning::VersionId));
         Ok(CallToolResult::success(vec![ContentBlock::text(format!("{{\"branch\":\"{}\"}}", id.0))]))
     }
 
-    #[tool(description = "Fast-forward merge branch → target")]
+    #[tool(name = "model.merge", description = "Fast-forward merge branch → target")]
     fn model_merge(&self, Parameters(args): Parameters<MergeParams>) -> Result<CallToolResult, McpError> {
         let mut store = self.versions.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         match store.merge(&BranchId(args.from), &BranchId(args.into), None) {
@@ -216,7 +216,7 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "List commit history of a branch")]
+    #[tool(name = "model.history", description = "List commit history of a branch")]
     fn model_history(&self, Parameters(args): Parameters<HistoryParams>) -> Result<CallToolResult, McpError> {
         let store = self.versions.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let h = store.history(&BranchId(args.branch));
@@ -224,7 +224,7 @@ impl StudioMcpServer {
         Ok(CallToolResult::success(vec![ContentBlock::text(format!("{{\"history\":[{}]}}", list))]))
     }
 
-    #[tool(description = "Toggle protection on a workspace")]
+    #[tool(name = "workspace.protect", description = "Toggle protection on a workspace")]
     fn workspace_protect(&self, Parameters(args): Parameters<ProtectParams>) -> Result<CallToolResult, McpError> {
         let mut store = self.versions.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let ws = WorkspaceId(args.workspace.clone());
@@ -235,14 +235,14 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Generate a reusable feature definition from code")]
+    #[tool(name = "feature.generate", description = "Generate a reusable feature definition from code")]
     fn feature_generate(&self, Parameters(args): Parameters<FeatureParams>) -> Result<CallToolResult, McpError> {
         let reg = self.features.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let def = reg.generate(args.name.clone(), args.code);
         Ok(CallToolResult::success(vec![ContentBlock::text(format!("{{\"feature\":{{\"name\":\"{}\",\"params\":{}}}}}", def.name, def.params.len()))]))
     }
 
-    #[tool(description = "Validate a feature definition")]
+    #[tool(name = "feature.test", description = "Validate a feature definition")]
     fn feature_test(&self, Parameters(args): Parameters<FeatureParams>) -> Result<CallToolResult, McpError> {
         let reg = self.features.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let def = reg.generate(args.name.clone(), args.code);
@@ -250,7 +250,7 @@ impl StudioMcpServer {
         Ok(CallToolResult::success(vec![ContentBlock::text(format!("{{\"ok\":{},\"issues\":{:?}}}", report.ok, report.issues))]))
     }
 
-    #[tool(description = "Register a reusable feature")]
+    #[tool(name = "feature.register", description = "Register a reusable feature")]
     fn feature_register(&self, Parameters(args): Parameters<FeatureParams>) -> Result<CallToolResult, McpError> {
         let mut reg = self.features.lock().map_err(|e| McpError::internal_error(e.to_string(), None))?;
         let def = reg.generate(args.name.clone(), args.code);
@@ -260,7 +260,7 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Build a Bill of Process from parts + steps")]
+    #[tool(name = "bop.build", description = "Build a Bill of Process from parts + steps")]
     fn bop_build(&self, Parameters(args): Parameters<BopParams>) -> Result<CallToolResult, McpError> {
         let mut builder = BopBuilder::new(args.name.clone());
         for p in &args.parts {
@@ -277,7 +277,7 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Assert BOM parts map to process steps")]
+    #[tool(name = "bop.link", description = "Assert BOM parts map to process steps")]
     fn bop_link(&self, Parameters(args): Parameters<BopParams>) -> Result<CallToolResult, McpError> {
         let mut builder = BopBuilder::new(args.name.clone());
         for p in &args.parts {
@@ -294,7 +294,54 @@ impl StudioMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::ClientHandler as _;
     use rmcp::ServerHandler;
+    use rmcp::model::{CallToolRequestParams, CallToolResult};
+    use rmcp::service::{RunningService, ServiceError};
+    use rmcp::{RoleClient, ServiceExt};
+
+    /// A live MCP client wired to a real `StudioMcpServer` over an in-memory
+    /// duplex transport. This exercises the actual `#[tool_router]` dispatch
+    /// path (`tools/call`), not just the inner domain logic.
+    type TestClient = RunningService<RoleClient, ()>;
+
+    /// Given a server handler, spawn it on a duplex transport and connect a
+    /// client. Returns (server handle, client).
+    async fn start_server_and_client(
+        server: StudioMcpServer,
+    ) -> (tokio::task::JoinHandle<anyhow::Result<()>>, TestClient) {
+        let (server_transport, client_transport) = tokio::io::duplex(4096);
+        let srv = tokio::spawn(async move {
+            let service = server.serve(server_transport).await?;
+            service.waiting().await?;
+            anyhow::Ok(())
+        });
+        let client = ().serve(client_transport).await.expect("client connects to server");
+        (srv, client)
+    }
+
+    async fn cleanup(srv: tokio::task::JoinHandle<anyhow::Result<()>>, client: TestClient) {
+        let _ = client.cancel().await;
+        srv.abort();
+    }
+
+    async fn call_tool(
+        client: &TestClient,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<CallToolResult, ServiceError> {
+        client
+            .call_tool(
+                CallToolRequestParams::new(name.to_string())
+                    .with_arguments(args.as_object().cloned().unwrap_or_default()),
+            )
+            .await
+    }
+
+    fn json_text(result: &CallToolResult) -> serde_json::Value {
+        let text = result.content[0].as_text().expect("tool returned text content");
+        serde_json::from_str(&text.text).expect("response is valid JSON")
+    }
 
     #[test]
     fn server_constructs_and_reports_info() {
@@ -302,5 +349,287 @@ mod tests {
         // rmcp handler produces an initialize result (protocol + capabilities) —
         // constructor + get_info must not panic.
         let _info = s.get_info();
+    }
+
+    #[tokio::test]
+    async fn model_commit_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client calls `model.commit` on a brand-new branch.
+        let result = call_tool(
+            &client,
+            "model.commit",
+            serde_json::json!({"branch": "main", "label": "v1", "message": "init"}),
+        )
+        .await
+        .expect("model.commit dispatches successfully");
+
+        // Then the dispatch returns the expected JSON envelope.
+        let json = json_text(&result);
+        assert_eq!(json["version"], 1);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn model_branch_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client calls `model.branch`.
+        let result = call_tool(&client, "model.branch", serde_json::json!({"name": "feat"}))
+            .await
+            .expect("model.branch dispatches successfully");
+
+        // Then the dispatch returns the created branch id.
+        let json = json_text(&result);
+        assert_eq!(json["branch"], "feat");
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn model_merge_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When we set up two branches and merge one into the other.
+        call_tool(&client, "model.branch", serde_json::json!({"name": "main"}))
+            .await
+            .unwrap();
+        call_tool(
+            &client,
+            "model.commit",
+            serde_json::json!({"branch": "main", "label": "v1", "message": "init"}),
+        )
+        .await
+        .unwrap();
+        call_tool(&client, "model.branch", serde_json::json!({"name": "feat", "from": 1}))
+            .await
+            .unwrap();
+        call_tool(
+            &client,
+            "model.commit",
+            serde_json::json!({"branch": "feat", "label": "f1", "message": "exp"}),
+        )
+        .await
+        .unwrap();
+
+        let result = call_tool(
+            &client,
+            "model.merge",
+            serde_json::json!({"from": "feat", "into": "main"}),
+        )
+        .await
+        .expect("model.merge dispatches successfully");
+
+        // Then the dispatch returns a new (merge) version.
+        let json = json_text(&result);
+        assert_eq!(json["version"], 3);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn model_history_dispatches_to_expected_json() {
+        // Given a fresh server handler with two commits on `main`.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+        call_tool(&client, "model.branch", serde_json::json!({"name": "main"}))
+            .await
+            .unwrap();
+        call_tool(
+            &client,
+            "model.commit",
+            serde_json::json!({"branch": "main", "label": "v1", "message": "init"}),
+        )
+        .await
+        .unwrap();
+        call_tool(
+            &client,
+            "model.commit",
+            serde_json::json!({"branch": "main", "label": "v2", "message": "work"}),
+        )
+        .await
+        .unwrap();
+
+        // When a client requests the history for `main`.
+        let result = call_tool(&client, "model.history", serde_json::json!({"branch": "main"}))
+            .await
+            .expect("model.history dispatches successfully");
+
+        // Then the dispatch returns the commit list, newest first.
+        let json = json_text(&result);
+        let history = json["history"].as_array().expect("history is an array");
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0]["id"], 2);
+        assert_eq!(history[1]["id"], 1);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn workspace_protect_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client toggles protection on a workspace.
+        let result = call_tool(
+            &client,
+            "workspace.protect",
+            serde_json::json!({"workspace": "prod", "protected": true}),
+        )
+        .await
+        .expect("workspace.protect dispatches successfully");
+
+        // Then the dispatch returns the workspace protection state.
+        let json = json_text(&result);
+        assert_eq!(json["workspace"], "prod");
+        assert_eq!(json["protected"], true);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn feature_generate_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client generates a feature definition.
+        let result = call_tool(
+            &client,
+            "feature.generate",
+            serde_json::json!({"name": "sprocket", "code": "feature sprocket"}),
+        )
+        .await
+        .expect("feature.generate dispatches successfully");
+
+        // Then the dispatch returns the generated feature metadata.
+        let json = json_text(&result);
+        assert_eq!(json["feature"]["name"], "sprocket");
+        assert_eq!(json["feature"]["params"], 0);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn feature_test_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client tests a valid feature definition.
+        let result = call_tool(
+            &client,
+            "feature.test",
+            serde_json::json!({"name": "ok_feature", "code": "valid code"}),
+        )
+        .await
+        .expect("feature.test dispatches successfully");
+
+        // Then the dispatch returns a passing validation report.
+        let json = json_text(&result);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["issues"], serde_json::json!([]));
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn feature_register_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client registers a feature.
+        let result = call_tool(
+            &client,
+            "feature.register",
+            serde_json::json!({"name": "gear", "code": "feature gear"}),
+        )
+        .await
+        .expect("feature.register dispatches successfully");
+
+        // Then the dispatch returns the registered feature name.
+        let json = json_text(&result);
+        assert_eq!(json["registered"], "gear");
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn bop_build_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client builds a Bill of Process from parts + steps.
+        let result = call_tool(
+            &client,
+            "bop.build",
+            serde_json::json!({
+                "name": "line-a",
+                "parts": [
+                    {"part_id": "P-001", "qty": 2},
+                    {"part_id": "P-002", "qty": 1}
+                ],
+                "steps": [
+                    {"operation": "feed"},
+                    {"operation": "assemble", "resource": "robot-1"}
+                ]
+            }),
+        )
+        .await
+        .expect("bop.build dispatches successfully");
+
+        // Then the dispatch returns counts of the built BOP.
+        let json = json_text(&result);
+        assert_eq!(json["name"], "line-a");
+        assert_eq!(json["parts"], 2);
+        assert_eq!(json["steps"], 2);
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn bop_link_dispatches_to_expected_json() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client asserts BOM→step linkage.
+        let result = call_tool(
+            &client,
+            "bop.link",
+            serde_json::json!({
+                "name": "line-a",
+                "parts": [
+                    {"part_id": "P-001", "qty": 2},
+                    {"part_id": "P-002", "qty": 1}
+                ],
+                "steps": [
+                    {"operation": "feed"},
+                    {"operation": "assemble", "resource": "robot-1"}
+                ]
+            }),
+        )
+        .await
+        .expect("bop.link dispatches successfully");
+
+        // Then the dispatch returns the linked part set.
+        let json = json_text(&result);
+        assert_eq!(json["linked_parts"], serde_json::json!(["P-001", "P-002"]));
+
+        cleanup(srv, client).await;
+    }
+
+    #[tokio::test]
+    async fn unknown_tool_returns_error() {
+        // Given a fresh server handler.
+        let (srv, client) = start_server_and_client(StudioMcpServer::new()).await;
+
+        // When a client calls a tool that does not exist.
+        let result = call_tool(&client, "no.such.tool", serde_json::json!({})).await;
+
+        // Then the dispatch fails with a protocol error (not a silent success).
+        assert!(result.is_err(), "unknown tool must return an error");
+
+        cleanup(srv, client).await;
     }
 }
