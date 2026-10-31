@@ -5,5 +5,11 @@
 //! live here.
 
 pub mod twin;
+pub mod versioning;
+pub mod featurescript;
+pub mod bop;
 
 pub use twin::*;
+pub use versioning::*;
+pub use featurescript::*;
+pub use bop::*;

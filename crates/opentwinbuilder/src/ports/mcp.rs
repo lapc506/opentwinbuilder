@@ -1,24 +1,27 @@
-//! MCP port — the Studio's tool surface as an interface.
+//! MCP port — the Studio's inbound tool surface.
 //!
-//! The application layer defines *what* tools exist; the infrastructure layer
-//! provides the concrete stateless vitemcp server that speaks the protocol.
+//! The inbound MCP surface is implemented by `infrastructure::mcp_server::StudioMcpServer`
+//! over the official `rmcp` (Rust SDK). This module documents the boundary: the
+//! application/domain define *what* capabilities exist (versioning, feature factory,
+//! BOP, Thingport); the infrastructure adapter exposes them as `rmcp` `#[tool]`s.
+//!
+//! The A2A orchestrator (outbound dispatch to external agents) is a SEPARATE layer
+//! and does not live here.
 
-use serde_json::Value;
-
-/// A single MCP tool = one operation the Studio exposes.
-#[derive(Debug, Clone)]
-pub struct Tool {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub input_schema: Value,
-}
-
-/// Stateless MCP server contract. No session state anywhere.
-pub trait McpServer {
-    /// Protocol revision we speak (stateless).
-    fn protocol_version(&self) -> &'static str;
-    /// `tools/list`.
-    fn list_tools(&self) -> Value;
-    /// `tools/call`.
-    fn call_tool(&self, name: &str, args: Value) -> Value;
-}
+/// The tool surface the Studio exposes inbound (for documentation / capability report).
+pub const INBOUND_TOOLS: &[&str] = &[
+    "capability_report",
+    "model.commit",
+    "model.branch",
+    "model.merge",
+    "model.history",
+    "workspace.protect",
+    "feature.generate",
+    "feature.test",
+    "feature.register",
+    "bop.build",
+    "bop.link",
+    "thingport.search",
+    "thingport.fetch",
+    "thingport.import",
+];

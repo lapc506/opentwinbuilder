@@ -2,3 +2,9 @@
 /target/
 **/*.rs.bk
 Cargo.lock.orig
+
+# Agent / git worktrees (transient, never committed)
+.agents/
+.agents/worktrees/
+.worktrees/
+.claude/worktrees/

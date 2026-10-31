@@ -70,6 +70,10 @@ mod iced_shell {
     }
 
     pub fn run() -> iced::Result {
+        // Force Vulkan as the wgpu backend (primary). Metal (Apple) and other
+        // backends are deferred; WGPU_BACKEND=vulkan guarantees the NVIDIA/Intel
+        // path on this host.
+        std::env::set_var("WGPU_BACKEND", "vulkan");
         iced::run("OpenTwinBuilder — Ribbon (iced)", update, view)
     }
 }
@@ -77,13 +81,47 @@ mod iced_shell {
 use bevy::prelude::*;
 
 use application::studio::Studio;
-use infrastructure::mcp_server::{ViteMcpServer, PROTOCOL_VERSION};
+use infrastructure::mcp_server::{StudioMcpServer, PROTOCOL_VERSION};
 use infrastructure::thingport::ThingportClient;
 use infrastructure::viewport_bevy::StudioViewportPlugin;
-use ports::mcp::McpServer;
+use ports::mcp::INBOUND_TOOLS;
 use ports::viewport::SelectionHandle;
 
+/// Serve the Studio's inbound MCP server over stdio (rmcp). This is the
+/// provider surface an external client (e.g. better-toolkits ViteMCP harness)
+/// connects to. Stateless: every request is self-contained.
+fn run_mcp_server_stdio() -> anyhow::Result<()> {
+    use rmcp::transport::stdio;
+    use rmcp::ServiceExt;
+
+    let thingport = ThingportClient::new(
+        std::env::var("THINGPORT_URL").unwrap_or_default(),
+        std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
+    );
+    let server = StudioMcpServer::new().with_thingport(thingport);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let running = server.serve(stdio()).await?;
+        println!("OpenTwinBuilder MCP server ready (stdio, protocol {PROTOCOL_VERSION})");
+        running.waiting().await?;
+        Ok(())
+    })
+}
+
 fn main() {
+    // Headless MCP server mode: `opentwinbuilder --mcp-server` speaks MCP over
+    // stdio. Useful as the provider a client harness dogfoods (feature factory).
+    if std::env::args().any(|a| a == "--mcp-server") {
+        std::process::exit(match run_mcp_server_stdio() {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("mcp-server error: {e}");
+                1
+            }
+        });
+    }
+
     #[cfg(feature = "iced-shell")]
     {
         let _ = iced_shell::run();
@@ -95,15 +133,16 @@ fn main() {
     let studio = Studio::new(selection.clone());
     let _ = studio;
 
-    // Stateless vitemcp MCP server boots next to the app (no session state).
+    // Stateless MCP server (rmcp) boots next to the app — inbound tool surface.
     // Thingport on-demand model source: THINGPORT_URL / THINGPORT_TOKEN env.
     let thingport = ThingportClient::new(
         std::env::var("THINGPORT_URL").unwrap_or_default(),
         std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
     );
-    let mcp = ViteMcpServer::new().with_thingport(thingport);
-    let _ = mcp.list_tools();
-    println!("OpenTwinBuilder MCP protocol: {}", PROTOCOL_VERSION);
+    let _mcp = StudioMcpServer::new().with_thingport(thingport);
+    // The A2A orchestrator (outbound) is a separate layer; here we only verify
+    // the inbound provider is constructed.
+    println!("OpenTwinBuilder MCP protocol: {} (inbound tools: {})", PROTOCOL_VERSION, INBOUND_TOOLS.len());
 
     // Bevy app: 3D viewport adapter → shared selection.
     App::new()
