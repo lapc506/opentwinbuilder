@@ -139,9 +139,17 @@ fn main() {
         std::env::var("THINGPORT_URL").unwrap_or_default(),
         std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
     );
-    let _mcp = StudioMcpServer::new().with_thingport(thingport);
-    // The A2A orchestrator (outbound) is a separate layer; here we only verify
-    // the inbound provider is constructed.
+    let _mcp = StudioMcpServer::new().with_thingport(thingport.clone());
+
+    // A2A orchestrator (outbound): register Thingport as a callable capability
+    // (`thingport.search` / `thingport.fetch` / `thingport.import`).
+    let mut a2a = application::a2a::A2AOrchestrator::new();
+    infrastructure::a2a::register_thingport(&mut a2a, thingport);
+    println!(
+        "OpenTwinBuilder A2A orchestrator: {} capability(ies) registered",
+        a2a.list().len()
+    );
+
     println!("OpenTwinBuilder MCP protocol: {} (inbound tools: {})", PROTOCOL_VERSION, INBOUND_TOOLS.len());
 
     // Bevy app: 3D viewport adapter → shared selection.

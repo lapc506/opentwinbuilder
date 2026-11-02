@@ -4,6 +4,7 @@
 //! (UI), and a stateless vitemcp MCP server. This is the only layer that knows
 //! about Bevy/Iced/transport.
 
+pub mod a2a;
 pub mod mcp_server;
 pub mod thingport;
 pub mod viewport_bevy;
