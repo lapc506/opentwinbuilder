@@ -19,4 +19,10 @@ pub trait ModelSource {
 
     /// Fetch one model by id (the on-demand download).
     fn fetch(&self, id: &str) -> Result<Value, String>;
+
+    /// Whether the source is configured (e.g. URL/token set). Sources that are
+    /// always usable can keep the default (`true`).
+    fn is_configured(&self) -> bool {
+        true
+    }
 }

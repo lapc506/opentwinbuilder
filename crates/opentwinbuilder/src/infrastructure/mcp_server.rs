@@ -17,17 +17,19 @@ use crate::domain::featurescript::FeatureRegistry;
 use crate::domain::versioning::{BranchId, VersionStore, WorkspaceId};
 use crate::infrastructure::thingport::ThingportClient;
 use crate::ports::model_source::ModelSource;
+use crate::ports::viewport::{ImportHandle, ImportRequest};
 
 /// Protocol revision we target (stateless).
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
 
 /// The Studio MCP server (rmcp). Holds the domain stores guarded by mutexes so
 /// `#[tool]` methods (which take `&self`) can mutate them.
-#[derive(Debug, Clone)]
 pub struct StudioMcpServer {
     pub name: &'static str,
     pub version: &'static str,
-    pub thingport: ThingportClient,
+    pub thingport: Box<dyn ModelSource + Send + Sync>,
+    /// Inbound queue for fetched models to render in the Bevy viewport.
+    pub imports: ImportHandle,
     pub versions: Arc<Mutex<VersionStore>>,
     pub features: Arc<Mutex<FeatureRegistry>>,
     pub bop: Arc<Mutex<BopBuilder>>,
@@ -38,7 +40,8 @@ impl Default for StudioMcpServer {
         Self {
             name: "opentwinbuilder",
             version: env!("CARGO_PKG_VERSION"),
-            thingport: ThingportClient::new("", ""),
+            thingport: Box::new(ThingportClient::new("", "")),
+            imports: ImportHandle::default(),
             versions: Arc::new(Mutex::new(VersionStore::new())),
             features: Arc::new(Mutex::new(FeatureRegistry::new())),
             bop: Arc::new(Mutex::new(BopBuilder::new("bop"))),
@@ -51,8 +54,13 @@ impl StudioMcpServer {
         Self::default()
     }
 
-    pub fn with_thingport(mut self, thingport: ThingportClient) -> Self {
-        self.thingport = thingport;
+    pub fn with_thingport(mut self, thingport: impl ModelSource + Send + Sync + 'static) -> Self {
+        self.thingport = Box::new(thingport);
+        self
+    }
+
+    pub fn with_imports(mut self, imports: ImportHandle) -> Self {
+        self.imports = imports;
         self
     }
 
@@ -176,13 +184,28 @@ impl StudioMcpServer {
         }
     }
 
-    #[tool(description = "Fetch one model by id from Thingport (on-demand download)")]
+    #[tool(description = "Fetch one model by id from Thingport (on-demand download) and import it into the Bevy viewport")]
     fn thingport_fetch(&self, Parameters(args): Parameters<ThingportIdParams>) -> Result<CallToolResult, McpError> {
         if !self.thingport.is_configured() {
             return Err(McpError::invalid_params("thingport not configured (set THINGPORT_URL and THINGPORT_TOKEN)", None));
         }
         match self.thingport.fetch(&args.id) {
-            Ok(model) => Ok(CallToolResult::success(vec![ContentBlock::text(format!("{{\"model\":{},\"imported_to_viewport\":false}}", model))])),
+            Ok(model) => {
+                let name = model.get("name").and_then(|v| v.as_str()).unwrap_or(&args.id);
+                let req = ImportRequest {
+                    model_id: args.id.clone(),
+                    name: name.to_string(),
+                    source: "thingport",
+                    data: model.clone(),
+                };
+                self.imports
+                    .push(req)
+                    .map_err(|e| McpError::internal_error(e, None))?;
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+                    "{{\"model\":{},\"imported_to_viewport\":true}}",
+                    model
+                ))]))
+            }
             Err(e) => Err(McpError::internal_error(e, None)),
         }
     }
@@ -300,6 +323,9 @@ mod tests {
     use rmcp::service::{RunningService, ServiceError};
     use rmcp::{RoleClient, ServiceExt};
 
+    use crate::ports::model_source::{ModelSource, ModelSummary};
+    use crate::ports::viewport::ImportHandle;
+
     /// A live MCP client wired to a real `StudioMcpServer` over an in-memory
     /// duplex transport. This exercises the actual `#[tool_router]` dispatch
     /// path (`tools/call`), not just the inner domain logic.
@@ -341,6 +367,54 @@ mod tests {
     fn json_text(result: &CallToolResult) -> serde_json::Value {
         let text = result.content[0].as_text().expect("tool returned text content");
         serde_json::from_str(&text.text).expect("response is valid JSON")
+    }
+
+    /// A stub `ModelSource` that responds to fetch without any HTTP, so the
+    /// on-demand path can be exercised in-process.
+    struct FakeThingport;
+
+    impl ModelSource for FakeThingport {
+        fn search(&self, _query: &str) -> Result<Vec<ModelSummary>, String> {
+            Ok(Vec::new())
+        }
+        fn fetch(&self, id: &str) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({
+                "id": id,
+                "name": format!("model-{id}"),
+                "shape": "cube",
+                "size": 1.0
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn thingport_fetch_imports_fetched_model_into_viewport() {
+        // Given a server configured with a stub model source and a real import handle.
+        let imports = ImportHandle::default();
+        let (srv, client) = start_server_and_client(
+            StudioMcpServer::new()
+                .with_thingport(FakeThingport)
+                .with_imports(imports.clone()),
+        )
+        .await;
+
+        // When a client fetches a model by id (on-demand download).
+        let result = call_tool(&client, "thingport.fetch", serde_json::json!({"id": "mod-001"}))
+            .await
+            .expect("thingport.fetch dispatches successfully");
+
+        // Then the tool reports the model was imported into the viewport...
+        let json = json_text(&result);
+        assert_eq!(json["imported_to_viewport"], true);
+        assert_eq!(json["model"]["id"], "mod-001");
+
+        // ...and the viewport import queue received exactly one import request for it.
+        let pending = imports.take_all().expect("import queue readable");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].model_id, "mod-001");
+        assert_eq!(pending[0].source, "thingport");
+
+        cleanup(srv, client).await;
     }
 
     #[test]

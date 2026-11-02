@@ -10,3 +10,4 @@ pub mod viewport;
 
 pub use model_source::ModelSource;
 pub use viewport::Viewport;
+pub use viewport::{ImportHandle, ImportRequest};

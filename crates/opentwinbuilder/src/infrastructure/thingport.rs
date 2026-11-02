@@ -35,11 +35,6 @@ impl ThingportClient {
             .map_err(|e| format!("thingport read {url}: {e}"))?;
         serde_json::from_str(&text).map_err(|e| format!("thingport parse {url}: {e}"))
     }
-
-    /// True when a Thingport instance URL has been configured.
-    pub fn is_configured(&self) -> bool {
-        !self.base_url.is_empty()
-    }
 }
 
 impl ModelSource for ThingportClient {
@@ -59,6 +54,10 @@ impl ModelSource for ThingportClient {
     fn fetch(&self, id: &str) -> Result<Value, String> {
         let encoded = percent_encode(id);
         self.get(&format!("/api/models/{encoded}"))
+    }
+
+    fn is_configured(&self) -> bool {
+        !self.base_url.is_empty()
     }
 }
 
