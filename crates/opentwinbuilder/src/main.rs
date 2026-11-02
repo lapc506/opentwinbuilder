@@ -85,7 +85,7 @@ use infrastructure::mcp_server::{StudioMcpServer, PROTOCOL_VERSION};
 use infrastructure::thingport::ThingportClient;
 use infrastructure::viewport_bevy::StudioViewportPlugin;
 use ports::mcp::INBOUND_TOOLS;
-use ports::viewport::SelectionHandle;
+use ports::viewport::{ImportHandle, SelectionHandle};
 
 /// Serve the Studio's inbound MCP server over stdio (rmcp). This is the
 /// provider surface an external client (e.g. better-toolkits ViteMCP harness)
@@ -130,6 +130,7 @@ fn main() {
 
     // --- Composition root ---
     let selection = SelectionHandle::default();
+    let imports = ImportHandle::default();
     let studio = Studio::new(selection.clone());
     let _ = studio;
 
@@ -139,20 +140,19 @@ fn main() {
         std::env::var("THINGPORT_URL").unwrap_or_default(),
         std::env::var("THINGPORT_TOKEN").unwrap_or_default(),
     );
-    let _mcp = StudioMcpServer::new().with_thingport(thingport.clone());
-
-    // A2A orchestrator (outbound): register Thingport as a callable capability
-    // (`thingport.search` / `thingport.fetch` / `thingport.import`).
     let mut a2a = application::a2a::A2AOrchestrator::new();
-    infrastructure::a2a::register_thingport(&mut a2a, thingport);
+    infrastructure::a2a::register_thingport(&mut a2a, thingport.clone());
     println!(
         "OpenTwinBuilder A2A orchestrator: {} capability(ies) registered",
         a2a.list().len()
     );
 
+    let _mcp = StudioMcpServer::new()
+        .with_thingport(thingport.clone())
+        .with_imports(imports.clone());
     println!("OpenTwinBuilder MCP protocol: {} (inbound tools: {})", PROTOCOL_VERSION, INBOUND_TOOLS.len());
 
-    // Bevy app: 3D viewport adapter → shared selection.
+    // Bevy app: 3D viewport adapter → shared selection + model import queue.
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -162,6 +162,6 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(StudioViewportPlugin { handle: selection })
+        .add_plugins(StudioViewportPlugin { handle: selection, imports })
         .run();
 }

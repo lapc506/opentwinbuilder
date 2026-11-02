@@ -12,3 +12,4 @@ pub mod viewport;
 pub use capability::{Capability, CapabilityResult};
 pub use model_source::ModelSource;
 pub use viewport::Viewport;
+pub use viewport::{ImportHandle, ImportRequest};

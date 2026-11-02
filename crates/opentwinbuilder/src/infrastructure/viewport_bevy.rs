@@ -11,7 +11,7 @@ use bevy::picking::Pickable;
 use bevy::prelude::*;
 
 use crate::domain::twin::{Selection, TwinId};
-use crate::ports::viewport::SelectionHandle;
+use crate::ports::viewport::{ImportHandle, SelectionHandle};
 
 /// Component tagging a "digital twin" entity in the viewport.
 #[derive(Component, Debug, Clone)]
@@ -19,16 +19,18 @@ pub struct TwinMarker {
     pub id: TwinId,
 }
 
-/// Bevy plugin that wires the 3D viewport to the shared selection state.
+/// Bevy plugin that wires the 3D viewport to the shared selection + import state.
 pub struct StudioViewportPlugin {
     pub handle: SelectionHandle,
+    pub imports: ImportHandle,
 }
 
 impl Plugin for StudioViewportPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.handle.clone())
+            .insert_resource(self.imports.clone())
             .add_systems(Startup, setup_scene)
-            .add_systems(Update, pick_system);
+            .add_systems(Update, (pick_system, process_imports));
     }
 }
 
@@ -100,4 +102,60 @@ fn pick_system(
             handle.set(Selection { picked: hovered.clone() });
         }
     }
+}
+
+/// Drain the inbound `ImportHandle` and spawn a scene entity per fetched model.
+fn process_imports(
+    mut commands: Commands,
+    imports: Res<ImportHandle>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let batch = match imports.take_all() {
+        Ok(b) => b,
+        Err(e) => {
+            error!("viewport import drain failed: {e}");
+            return;
+        }
+    };
+
+    for (i, req) in batch.into_iter().enumerate() {
+        let mesh = mesh_for_model(&req.data);
+        let size = mesh_size_hint(&req.data);
+        // Place imports in a row beside the starter twins, on the ground plane.
+        let x = 3.0 + i as f32 * 1.5;
+
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.9, 0.55, 0.2),
+                ..default()
+            })),
+            Transform::from_translation(Vec3::new(x, size * 0.5, 0.0)),
+            TwinMarker {
+                id: TwinId(format!("thingport-{}", req.model_id)),
+            },
+            Pickable::default(),
+        ));
+    }
+}
+
+/// Map a fetched model payload to a scene mesh. The Thingport JSON schema is not
+/// fully specified, so we honour a couple of well-known shape hints and fall back
+/// to a distinctive cube so an imported model is always visible.
+fn mesh_for_model(data: &serde_json::Value) -> Mesh {
+    let shape = data.get("shape").and_then(|v| v.as_str()).unwrap_or("cube");
+    let size = mesh_size_hint(data);
+    match shape {
+        "plane" => Plane3d::default().mesh().size(size, size).into(),
+        _ => Cuboid::new(size, size, size).mesh().into(),
+    }
+}
+
+/// Optional `size` hint from the model payload (defaults to 1.0).
+fn mesh_size_hint(data: &serde_json::Value) -> f32 {
+    data.get("size")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .unwrap_or(1.0)
 }
